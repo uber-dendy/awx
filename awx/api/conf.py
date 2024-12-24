@@ -1,4 +1,9 @@
+# Python
+from functools import lru_cache
+
 # Django
+from django.urls import resolve, URLResolver, URLPattern
+from django.urls.exceptions import Resolver404
 from django.utils.translation import gettext_lazy as _
 
 # Django REST Framework
@@ -6,6 +11,7 @@ from rest_framework import serializers
 
 # AWX
 from awx.conf import fields, register, register_validate
+from awx.settings.defaults import ANONYMOUS_ACCESS_API_ALLOWED_PATHS as DEFAULT_ALLOWED_PATHS
 
 
 register(
@@ -66,6 +72,26 @@ register(
     category_slug='authentication',
 )
 
+register(
+    'RESTRICT_API_ANONYMOUS_ACCESS',
+    field_class=fields.BooleanField,
+    default=False,
+    label=_('Restrict Anonymous API Access'),
+    help_text=_('If true, all API endpoints except those specified in "Allowed URLs for Anonymous Access" will require authentication.'),
+    category=_('Authentication'),
+    category_slug='authentication',
+)
+
+register(
+    'ANONYMOUS_ACCESS_API_ALLOWED_PATHS',
+    field_class=fields.StringListField,
+    default=DEFAULT_ALLOWED_PATHS,
+    label=_('Allowed URLs for Anonymous Access'),
+    help_text=_('A list of API endpoints that can be accessed without authentication, even when "Restrict Anonymous API Access" is enabled.'),
+    category=_('Authentication'),
+    category_slug='authentication',
+)
+
 
 def authentication_validate(serializer, attrs):
     if attrs.get('DISABLE_LOCAL_AUTH', False):
@@ -73,4 +99,33 @@ def authentication_validate(serializer, attrs):
     return attrs
 
 
+@lru_cache(maxsize=128)
+def validate_url_path(path):
+    """Validate and cache the result for a given URL path."""
+    try:
+        resolve(path)
+    except Resolver404:
+        return False
+    return True
+
+
+def allowed_urls_validate(serializer, attrs):
+    '''
+    Validation for allowed URLs in ANONYMOUS_ACCESS_API_ALLOWED_PATHS
+    This ensures that administrators provide resolvable URLs
+    and include the required default URLs for core functionality.
+    '''
+    paths = attrs.get('ANONYMOUS_ACCESS_API_ALLOWED_PATHS', [])
+    invalid_paths = [path for path in paths if not validate_url_path(path)]
+
+    if invalid_paths:
+        raise serializers.ValidationError(_(f"Invalid paths: {', '.join(invalid_paths)}"))
+
+    missing_paths = [path for path in DEFAULT_ALLOWED_PATHS if path not in paths]
+    if missing_paths:
+        attrs['ANONYMOUS_ACCESS_API_ALLOWED_PATHS'] = missing_paths + paths
+    return attrs
+
+
 register_validate('authentication', authentication_validate)
+register_validate('authentication', allowed_urls_validate)

@@ -12,9 +12,12 @@ from django.conf import settings
 from django.contrib.auth import logout
 from django.db.migrations.recorder import MigrationRecorder
 from django.db import connection
+from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.utils.deprecation import MiddlewareMixin
+from django.utils.translation import gettext_lazy as _
 from django.urls import reverse, resolve
+from rest_framework import status
 
 from awx.main import migrations
 from awx.main.utils.profiling import AWXProfiler
@@ -223,3 +226,29 @@ class OptionalURLPrefixPath(MiddlewareMixin):
             request.urlconf = self._url_optional(prefix)
         else:
             request.urlconf = 'awx.urls'
+
+
+class AnonymousAccessRestrictionMiddleware(MiddlewareMixin):
+    """
+    Restrict anonymous access to API endpoints if RESTRICT_API_ANONYMOUS_ACCESS = True,
+    except for those listed in the ANONYMOUS_ACCESS_API_ALLOWED_PATHS.
+    If access is restricted, unauthenticated users will receive a 401 Unauthorized response.
+    """
+
+    @functools.lru_cache
+    def get_allowed_paths(self):
+        return set(settings.ANONYMOUS_ACCESS_API_ALLOWED_PATHS)
+
+    def process_request(self, request):
+        if not request.path.startswith('/api'):
+            return
+
+        if settings.RESTRICT_API_ANONYMOUS_ACCESS and request.path not in self.get_allowed_paths():
+            if not request.user.is_authenticated:
+                msg = _('Anonymous API access restricted.') + _(' To establish a login session, visit') + ' /api/login/.'
+                return JsonResponse(
+                    {
+                        'detail': msg,
+                    },
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )

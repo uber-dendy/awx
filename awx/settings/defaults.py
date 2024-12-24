@@ -893,6 +893,7 @@ MIDDLEWARE = [
     'crum.CurrentRequestUserMiddleware',
     'awx.main.middleware.URLModificationMiddleware',
     'awx.main.middleware.SessionTimeoutMiddleware',
+    'awx.main.middleware.AnonymousAccessRestrictionMiddleware',
 ]
 
 # Secret header value to exchange for websockets responsible for distributing websocket messages.
@@ -1057,3 +1058,9 @@ SYSTEM_USERNAME = None
 
 # feature flags
 FLAGS = {}
+
+# Restrict access to all endpoints with exception for ANONYMOUS_ACCESS_API_ALLOWED_PATHS
+RESTRICT_API_ANONYMOUS_ACCESS = False
+
+# These are the essential endpoints required for authentication and token management for RESTRICT_API_ANONYMOUS_ACCESS.
+ANONYMOUS_ACCESS_API_ALLOWED_PATHS = ['/api/login/']
